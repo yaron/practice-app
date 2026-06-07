@@ -1,0 +1,37 @@
+name: Artifact creator
+
+on:
+  push:
+    branches:
+      - "main"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6.0.3
+
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v6.4.0
+        with:
+          node-version: 26
+        
+      - name: Get dependencies
+        run: cd frontend && npm install
+      
+      - name: Compile
+        run: cd frontend && npm run build
+        
+      - name: Tar created files
+        run: |
+          tar -czf practice.tar.gz frontend/public
+
+      - uses: "marvinpinto/action-automatic-releases@latest"
+        with:
+          repo_token: "${{ secrets.GITHUB_TOKEN }}"
+          automatic_release_tag: "latest"
+          prerelease: true
+          title: "Development Build"
+          files: |
+             practice.tar.gz
