@@ -25,7 +25,7 @@ jobs:
         
       - name: Tar created files
         run: |
-          tar -czf practice.tar.gz frontend/public
+          tar -czf practice.tar.gz frontend/dist
 
       - uses: "marvinpinto/action-automatic-releases@latest"
         with:
