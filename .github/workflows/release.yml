@@ -27,6 +27,14 @@ jobs:
         run: |
           tar -czf practice.tar.gz frontend/dist
 
+      - name: Set up Go 1.x
+        uses: actions/setup-go@v6
+        with:
+          go-version: ^1.22
+
+      - name: Build
+        run: export GIN_MODE=release; cd backend; go build -v -o practice-api main.go
+
       - uses: "marvinpinto/action-automatic-releases@latest"
         with:
           repo_token: "${{ secrets.GITHUB_TOKEN }}"
@@ -35,3 +43,4 @@ jobs:
           title: "Development Build"
           files: |
              practice.tar.gz
+             backend/practice-api
