@@ -4,6 +4,7 @@
   import PendingCards from "./components/PendingCards.svelte";
   import SessionHistory from "./components/SessionHistory.svelte";
   import UserManagement from "./components/UserManagement.svelte";
+  import WheelOptions from "./components/WheelOptions.svelte";
 
   const API = import.meta.env.VITE_API_URL ?? "http://localhost:8080";
   const STORAGE_KEY = "vq_refresh_token";
@@ -245,6 +246,14 @@
         >
           Gebruikers
         </button>
+        <button
+          role="tab"
+          aria-selected={activeTab === "wheel"}
+          class:active={activeTab === "wheel"}
+          onclick={() => switchTab("wheel")}
+        >
+          Wieltje
+        </button>
       </div>
 
       {#if actionError}
@@ -255,8 +264,10 @@
         <PendingCards {sessions} onapprove={handleApprove} onreject={handleReject} />
       {:else if activeTab === "history"}
         <SessionHistory sessions={history} ondelete={handleDelete} />
-      {:else}
+      {:else if activeTab === "users"}
         <UserManagement {jwt} api={API} />
+      {:else}
+        <WheelOptions {jwt} api={API} />
       {/if}
     </div>
   {/if}

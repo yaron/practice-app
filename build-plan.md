@@ -452,8 +452,6 @@ VitePWA({
 - Create app icons (192×192 and 512×512 PNG)
 - Test "Add to Home Screen" on Android Chrome
 - Test "Install App" prompt on Windows Chrome/Edge
-- Confirm offline shell: wheel renders from cached assets even if API unreachable; submit button shows "You're offline — session will send when you're back" if `navigator.onLine` is false (background sync is a stretch goal)
-- Nginx updated with HTTPS (Let's Encrypt / Certbot) — required for service workers and FCM
 ---
  
 ### Phase 7 — Wheel Content Management & Confetti

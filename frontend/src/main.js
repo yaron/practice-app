@@ -3,9 +3,9 @@ import './app.css'
 import App from './App.svelte'
 
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/firebase-messaging-sw.js').catch(() => {
-    // SW registration failure is non-fatal; FCM background notifications won't work
-  })
+  navigator.serviceWorker.register('/firebase-messaging-sw.js')
+    .then(reg => reg.update())  // always check for a new SW version on page load
+    .catch(() => {})
 }
 
 const app = mount(App, {

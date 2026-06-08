@@ -72,6 +72,9 @@ func setupTestRouter(t *testing.T) *gin.Engine {
 	admin.POST("/admins", handlers.CreateAdmin)
 	admin.DELETE("/admins/:id", handlers.DeleteAdmin)
 	admin.PATCH("/admins/:id", handlers.UpdateAdmin)
+	admin.POST("/options", handlers.CreateOption)
+	admin.PATCH("/options/:id", handlers.UpdateOption)
+	admin.DELETE("/options/:id", handlers.DeleteOption)
 
 	api.POST("/fcm/register", handlers.RegisterFCMToken)
 
@@ -1342,5 +1345,115 @@ func TestDeleteSession_ApprovedWithBonusUndoesBonus(t *testing.T) {
 	// Should be back to 90 (2 sessions × 10 pts × 1 task)
 	if totalAfterDelete != 20 {
 		t.Errorf("expected 20 points after deleting third session (bonus undone), got %d", totalAfterDelete)
+	}
+}
+
+// --- wheel option admin tests ---
+
+func TestCreateOption_ChildNotFound(t *testing.T) {
+	r := setupTestRouter(t)
+	token := loginAsAdmin(t, r)
+	w := authReq(t, r, http.MethodPost, "/api/admin/options", map[string]any{
+		"child_id":   999,
+		"text":       "Test optie",
+		"short_text": "Test",
+	}, token)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreateOption_Success(t *testing.T) {
+	r := setupTestRouter(t)
+	token := loginAsAdmin(t, r)
+	w := authReq(t, r, http.MethodPost, "/api/admin/options", map[string]any{
+		"child_id":   1,
+		"text":       "Speel een liedje zittend",
+		"short_text": "Zittend",
+		"is_bonus":   false,
+	}, token)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var created map[string]any
+	json.Unmarshal(w.Body.Bytes(), &created) //nolint:errcheck
+	if created["text"] != "Speel een liedje zittend" {
+		t.Errorf("unexpected text: %v", created["text"])
+	}
+	if created["child_id"].(float64) != 1 {
+		t.Errorf("unexpected child_id: %v", created["child_id"])
+	}
+}
+
+func TestUpdateOption_NotFound(t *testing.T) {
+	r := setupTestRouter(t)
+	token := loginAsAdmin(t, r)
+	w := authReq(t, r, http.MethodPatch, "/api/admin/options/9999", map[string]any{
+		"text":       "X",
+		"short_text": "X",
+		"is_bonus":   false,
+	}, token)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUpdateOption_Success(t *testing.T) {
+	r := setupTestRouter(t)
+	token := loginAsAdmin(t, r)
+
+	gw := authReq(t, r, http.MethodGet, "/api/options?child_id=1", nil, "")
+	var opts []map[string]any
+	json.Unmarshal(gw.Body.Bytes(), &opts) //nolint:errcheck
+	optID := int(opts[0]["id"].(float64))
+
+	w := authReq(t, r, http.MethodPatch, "/api/admin/options/"+strconv.Itoa(optID), map[string]any{
+		"text":       "Nieuwe tekst",
+		"short_text": "Nieuw",
+		"is_bonus":   true,
+	}, token)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var updated map[string]any
+	json.Unmarshal(w.Body.Bytes(), &updated) //nolint:errcheck
+	if updated["text"] != "Nieuwe tekst" {
+		t.Errorf("unexpected text: %v", updated["text"])
+	}
+	if updated["is_bonus"] != true {
+		t.Errorf("expected is_bonus true, got %v", updated["is_bonus"])
+	}
+}
+
+func TestDeleteOption_NotFound(t *testing.T) {
+	r := setupTestRouter(t)
+	token := loginAsAdmin(t, r)
+	w := authReq(t, r, http.MethodDelete, "/api/admin/options/9999", nil, token)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestDeleteOption_Success(t *testing.T) {
+	r := setupTestRouter(t)
+	token := loginAsAdmin(t, r)
+
+	gw := authReq(t, r, http.MethodGet, "/api/options?child_id=1", nil, "")
+	var opts []map[string]any
+	json.Unmarshal(gw.Body.Bytes(), &opts) //nolint:errcheck
+	optID := int(opts[0]["id"].(float64))
+
+	w := authReq(t, r, http.MethodDelete, "/api/admin/options/"+strconv.Itoa(optID), nil, token)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	gw2 := authReq(t, r, http.MethodGet, "/api/options?child_id=1", nil, "")
+	var opts2 []map[string]any
+	json.Unmarshal(gw2.Body.Bytes(), &opts2) //nolint:errcheck
+	for _, o := range opts2 {
+		if int(o["id"].(float64)) == optID {
+			t.Errorf("option %d still present after delete", optID)
+		}
 	}
 }

@@ -51,6 +51,10 @@ func main() {
 			admin.PATCH("/children/:id", handlers.RenameChild)
 			admin.DELETE("/children/:id", handlers.DeleteChild)
 
+			admin.POST("/options", handlers.CreateOption)
+			admin.PATCH("/options/:id", handlers.UpdateOption)
+			admin.DELETE("/options/:id", handlers.DeleteOption)
+
 			admin.GET("/admins", handlers.ListAdmins)
 			admin.POST("/admins", handlers.CreateAdmin)
 			admin.DELETE("/admins/:id", handlers.DeleteAdmin)
