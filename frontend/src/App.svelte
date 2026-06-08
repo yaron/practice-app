@@ -1,14 +1,18 @@
 <script>
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import Wheel from "./components/Wheel.svelte";
   import SessionTracker from "./components/SessionTracker.svelte";
   import SuccessPanel from "./components/SuccessPanel.svelte";
+  import Hud from "./components/Hud.svelte";
+  import Admin from "./Admin.svelte";
   import { WHEEL_TASKS_SHORT } from "./lib/wheelData.js";
 
   const API = import.meta.env.VITE_API_URL ?? "http://localhost:8080";
 
-  const match = window.location.pathname.match(/^\/child\/(\d+)/);
-  const CHILD_ID = match ? parseInt(match[1], 10) : null;
+  const path = window.location.pathname;
+  const isAdmin = path === "/admin";
+  const childMatch = !isAdmin && path.match(/^\/child\/(\d+)/);
+  const CHILD_ID = childMatch ? parseInt(childMatch[1], 10) : null;
 
   /** @type {string[]} */
   let wheelTasks = $state([]);
@@ -16,6 +20,10 @@
   let submitted = $state(false);
   let loading = $state(true);
   let submitError = $state("");
+  /** @type {{ current_level: number, experience_points: number, total_points: number, shield_count: number, week_session_count: number, milestone_reached: boolean, year_week: string }|null} */
+  let stats = $state(null);
+  /** @type {ReturnType<typeof setInterval>|null} */
+  let statsInterval = $state(null);
 
   onMount(async () => {
     if (!CHILD_ID) {
@@ -23,15 +31,33 @@
       return;
     }
     try {
-      const res = await fetch(`${API}/api/options?child_id=${CHILD_ID}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const options = await res.json();
+      const [optRes, statsRes] = await Promise.all([
+        fetch(`${API}/api/options?child_id=${CHILD_ID}`),
+        fetch(`${API}/api/stats?child_id=${CHILD_ID}`),
+      ]);
+      if (!optRes.ok) throw new Error(`HTTP ${optRes.status}`);
+      const options = await optRes.json();
       wheelTasks = options.map((/** @type {{ text: string }} */ o) => o.text);
+      if (statsRes.ok) stats = await statsRes.json();
     } catch {
-      wheelTasks = []; // error state handled in template
+      wheelTasks = [];
     } finally {
       loading = false;
     }
+
+    // Poll stats every 10 s so XP/level update when parent approves
+    statsInterval = setInterval(async () => {
+      try {
+        const res = await fetch(`${API}/api/stats?child_id=${CHILD_ID}`);
+        if (res.ok) stats = await res.json();
+      } catch {
+        /* ignore */
+      }
+    }, 10_000);
+  });
+
+  onDestroy(() => {
+    if (statsInterval) clearInterval(statsInterval);
   });
 
   function addTask(task) {
@@ -46,7 +72,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           child_id: CHILD_ID,
-          tasks_completed: sessionTasks.length,
+          tasks: sessionTasks,
         }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -63,26 +89,33 @@
   }
 </script>
 
-<main>
-  <h1>🎻 Viool Quest</h1>
+{#if isAdmin}
+  <Admin />
+{:else}
+  <main>
+    <h1>🎻 Viool Quest</h1>
 
-  {#if !CHILD_ID}
-    <p class="hint error">Ongeldig adres. Ga naar <code>/child/1</code></p>
-  {:else if submitted}
-    <SuccessPanel onreset={handleReset} />
-  {:else if loading}
-    <p class="hint">Laden…</p>
-  {:else if wheelTasks.length === 0}
-    <p class="hint error">Kon de wiel-opties niet laden.</p>
-    <button class="retry" onclick={() => location.reload()}>Opnieuw proberen</button>
-  {:else}
-    <Wheel tasks={wheelTasks} shorttasks={WHEEL_TASKS_SHORT} onresult={addTask} />
-    {#if submitError}
-      <p class="hint error">{submitError}</p>
+    {#if !CHILD_ID}
+      <p class="hint error">Ongeldig adres. Ga naar <code>/child/1</code></p>
+    {:else if submitted}
+      <SuccessPanel onreset={handleReset} />
+    {:else if loading}
+      <p class="hint">Laden…</p>
+    {:else if wheelTasks.length === 0}
+      <p class="hint error">Kon de wiel-opties niet laden.</p>
+      <button class="retry" onclick={() => location.reload()}>Opnieuw proberen</button>
+    {:else}
+      {#if stats}
+        <Hud {stats} />
+      {/if}
+      <Wheel tasks={wheelTasks} shorttasks={WHEEL_TASKS_SHORT} onresult={addTask} />
+      {#if submitError}
+        <p class="hint error">{submitError}</p>
+      {/if}
+      <SessionTracker tasks={sessionTasks} onsubmit={handleSubmit} />
     {/if}
-    <SessionTracker tasks={sessionTasks} onsubmit={handleSubmit} />
-  {/if}
-</main>
+  </main>
+{/if}
 
 <style>
   main {
@@ -95,7 +128,7 @@
   h1 {
     color: #fee440;
     font-size: 2rem;
-    margin: 0 0 1.75rem;
+    margin: 0 0 1.25rem;
     letter-spacing: 0.02em;
   }
 

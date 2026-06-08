@@ -7,6 +7,7 @@ import (
 
 	"violin-quest-api/db"
 	"violin-quest-api/handlers"
+	"violin-quest-api/middleware"
 
 	"github.com/gin-gonic/gin"
 )
@@ -24,6 +25,18 @@ func main() {
 		api.GET("/options", handlers.GetOptions)
 		api.GET("/stats", handlers.GetStats)
 		api.POST("/session", handlers.SubmitSession)
+
+		api.POST("/auth/login", handlers.Login)
+		api.POST("/auth/refresh", handlers.RefreshToken)
+
+		admin := api.Group("/admin")
+		admin.Use(middleware.JWTAuth())
+		{
+			admin.GET("/sessions", handlers.ListPendingSessions)
+			admin.GET("/history", handlers.GetHistory)
+			admin.POST("/approve/:id", handlers.ApproveSession)
+			admin.POST("/reject/:id", handlers.RejectSession)
+		}
 	}
 
 	port := os.Getenv("PORT")
@@ -37,12 +50,10 @@ func main() {
 	}
 }
 
-// corsMiddleware allows requests from any origin during development.
-// In production, Nginx handles CORS so this never fires.
 func corsMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Header("Access-Control-Allow-Origin", "*")
-		c.Header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		c.Header("Access-Control-Allow-Methods", "GET, POST, DELETE, PATCH, OPTIONS")
 		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		if c.Request.Method == http.MethodOptions {
 			c.AbortWithStatus(http.StatusNoContent)

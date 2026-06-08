@@ -40,6 +40,34 @@ type WeeklyStreak struct {
 	MilestoneReached bool   `json:"milestone_reached"`
 }
 
+type SessionWithTasks struct {
+	ID             int64    `json:"id"`
+	ChildID        int64    `json:"child_id"`
+	ChildName      string   `json:"child_name"`
+	Date           string   `json:"date"`
+	TasksCompleted int      `json:"tasks_completed"`
+	Status         string   `json:"status"`
+	RejectionNote  string   `json:"rejection_note,omitempty"`
+	Tasks          []string `json:"tasks"`
+	CreatedAt      string   `json:"created_at"`
+}
+
+type Admin struct {
+	ID           int64  `json:"id"`
+	Username     string `json:"username"`
+	PasswordHash string `json:"-"`
+}
+
+type PendingSession struct {
+	ID             int64  `json:"id"`
+	ChildID        int64  `json:"child_id"`
+	ChildName      string `json:"child_name"`
+	Date           string `json:"date"`
+	TasksCompleted int    `json:"tasks_completed"`
+	Status         string `json:"status"`
+	CreatedAt      string `json:"created_at"`
+}
+
 type StatsResponse struct {
 	CurrentLevel     int    `json:"current_level"`
 	ExperiencePoints int    `json:"experience_points"`

@@ -59,6 +59,20 @@ func Migrate() {
 			type TEXT    NOT NULL,
 			cost INTEGER NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS refresh_tokens (
+			id         INTEGER PRIMARY KEY AUTOINCREMENT,
+			admin_id   INTEGER NOT NULL REFERENCES admins(id),
+			token_hash TEXT    NOT NULL UNIQUE,
+			expires_at DATETIME NOT NULL,
+			revoked    INTEGER DEFAULT 0
+		)`,
+		`CREATE TABLE IF NOT EXISTS session_tasks (
+			id         INTEGER PRIMARY KEY AUTOINCREMENT,
+			session_id INTEGER NOT NULL REFERENCES sessions(id),
+			task_text  TEXT    NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_session_tasks_session
+			ON session_tasks(session_id)`,
 	}
 
 	for _, s := range statements {

@@ -365,7 +365,6 @@ golang.org/x/crypto  // bcrypt
 - `GET /api/admin/sessions` — list PENDING sessions with child name joined
 - `POST /api/admin/approve/:id` — full approval algorithm (see Core Business Logic), wrapped in SQLite transaction
 - `POST /api/admin/reject/:id` — set status REJECTED, save optional note
-- `POST /api/admin/create-admin` — count admins first, reject if >= 2, else insert with bcrypt hash
 Frontend:
 - Admin login modal (Svelte component, shown at `/admin` if no valid JWT in memory)
 - Pending session cards with Approve / Reject actions
