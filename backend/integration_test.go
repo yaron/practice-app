@@ -63,6 +63,7 @@ func setupTestRouter(t *testing.T) *gin.Engine {
 	admin.GET("/history", handlers.GetHistory)
 	admin.POST("/approve/:id", handlers.ApproveSession)
 	admin.POST("/reject/:id", handlers.RejectSession)
+	admin.DELETE("/sessions/:id", handlers.DeleteSession)
 	admin.GET("/children", handlers.ListChildren)
 	admin.PATCH("/children/:id", handlers.RenameChild)
 	admin.GET("/admins", handlers.ListAdmins)
@@ -1124,5 +1125,154 @@ func TestUpdateAdmin_NotFound(t *testing.T) {
 	w := authReq(t, r, http.MethodPatch, "/api/admin/admins/9999", map[string]any{"username": "x"}, token)
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
+
+// --- DELETE /api/admin/sessions/:id ---
+
+func TestDeleteSession_NotFound(t *testing.T) {
+	r := setupTestRouter(t)
+	token := loginAsAdmin(t, r)
+
+	w := authReq(t, r, http.MethodDelete, "/api/admin/sessions/9999", nil, token)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestDeleteSession_Pending(t *testing.T) {
+	r := setupTestRouter(t)
+	token := loginAsAdmin(t, r)
+
+	// Submit a session (pending)
+	sw := postJSON(t, r, "/api/session", map[string]any{"child_id": 1, "tasks": []string{"Toonladder"}})
+	if sw.Code != http.StatusCreated {
+		t.Fatalf("submit failed: %d", sw.Code)
+	}
+	var created map[string]any
+	json.Unmarshal(sw.Body.Bytes(), &created) //nolint:errcheck
+	sessionID := int(created["id"].(float64))
+
+	// Delete it
+	dw := authReq(t, r, http.MethodDelete, "/api/admin/sessions/"+strconv.Itoa(sessionID), nil, token)
+	if dw.Code != http.StatusOK {
+		t.Fatalf("delete failed: %d: %s", dw.Code, dw.Body.String())
+	}
+
+	// Should be gone from history
+	hw := authReq(t, r, http.MethodGet, "/api/admin/history", nil, token)
+	var history []map[string]any
+	json.Unmarshal(hw.Body.Bytes(), &history) //nolint:errcheck
+	for _, s := range history {
+		if int(s["id"].(float64)) == sessionID {
+			t.Errorf("deleted session still appears in history")
+		}
+	}
+}
+
+func TestDeleteSession_ApprovedUndoesScore(t *testing.T) {
+	r := setupTestRouter(t)
+	token := loginAsAdmin(t, r)
+
+	// Submit and approve a 3-task session
+	sw := postJSON(t, r, "/api/session", map[string]any{
+		"child_id": 1,
+		"tasks":    []string{"Toonladder", "Etude", "Liedje"},
+	})
+	if sw.Code != http.StatusCreated {
+		t.Fatalf("submit failed: %d", sw.Code)
+	}
+	var created map[string]any
+	json.Unmarshal(sw.Body.Bytes(), &created) //nolint:errcheck
+	sessionID := int(created["id"].(float64))
+
+	aw := authReq(t, r, http.MethodPost, "/api/admin/approve/"+strconv.Itoa(sessionID), nil, token)
+	if aw.Code != http.StatusOK {
+		t.Fatalf("approve failed: %d", aw.Code)
+	}
+
+	// Record stats before delete
+	statsBeforeDelete := func() map[string]any {
+		sw := httptest.NewRecorder()
+		r.ServeHTTP(sw, httptest.NewRequest(http.MethodGet, "/api/stats?child_id=1", nil))
+		var s map[string]any
+		json.Unmarshal(sw.Body.Bytes(), &s) //nolint:errcheck
+		return s
+	}
+
+	statsBefore := statsBeforeDelete()
+	pointsBefore := int(statsBefore["total_points"].(float64))
+	if pointsBefore == 0 {
+		t.Fatal("expected points > 0 after approval")
+	}
+
+	// Delete the approved session
+	dw := authReq(t, r, http.MethodDelete, "/api/admin/sessions/"+strconv.Itoa(sessionID), nil, token)
+	if dw.Code != http.StatusOK {
+		t.Fatalf("delete failed: %d: %s", dw.Code, dw.Body.String())
+	}
+
+	statsAfter := statsBeforeDelete()
+	pointsAfter := int(statsAfter["total_points"].(float64))
+	if pointsAfter >= pointsBefore {
+		t.Errorf("expected points to decrease after deleting approved session; before=%d after=%d", pointsBefore, pointsAfter)
+	}
+}
+
+func TestDeleteSession_ApprovedWithBonusUndoesBonus(t *testing.T) {
+	r := setupTestRouter(t)
+	token := loginAsAdmin(t, r)
+
+	getStats := func() map[string]any {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/stats?child_id=1", nil))
+		var s map[string]any
+		json.Unmarshal(w.Body.Bytes(), &s) //nolint:errcheck
+		return s
+	}
+
+	// Submit and approve 3 sessions on different dates to trigger the weekly milestone.
+	// We do this by inserting directly, then approving, to control the dates.
+	// Simpler: just submit+approve 3 times on the same day (each subsequent one won't be
+	// first_of_day, only the first counts). We need 3 separate days.
+	// Use direct SQL to set the date on each session.
+	dates := []string{"2025-01-06", "2025-01-07", "2025-01-08"} // Mon-Wed same ISO week
+	var lastID int
+	for _, date := range dates {
+		sw := postJSON(t, r, "/api/session", map[string]any{"child_id": 1, "tasks": []string{"Toonladder"}})
+		if sw.Code != http.StatusCreated {
+			t.Fatalf("submit failed: %d", sw.Code)
+		}
+		var created map[string]any
+		json.Unmarshal(sw.Body.Bytes(), &created) //nolint:errcheck
+		sid := int(created["id"].(float64))
+		lastID = sid
+		// Backdate the session so each is on a distinct day of the same ISO week.
+		db.DB.Exec(`UPDATE sessions SET date = ? WHERE id = ?`, date, sid) //nolint:errcheck
+		aw := authReq(t, r, http.MethodPost, "/api/admin/approve/"+strconv.Itoa(sid), nil, token)
+		if aw.Code != http.StatusOK {
+			t.Fatalf("approve failed: %d", aw.Code)
+		}
+	}
+
+	// Third approval should have triggered the milestone bonus (+50)
+	statsAfter3 := getStats()
+	totalAfter3 := int(statsAfter3["total_points"].(float64))
+	// 3 sessions × 1 task × 10 pts = 30 base + 50 bonus = 80
+	if totalAfter3 != 80 {
+		t.Errorf("expected 80 points after 3 sessions with bonus, got %d", totalAfter3)
+	}
+
+	// Delete the third (milestone-triggering) session
+	dw := authReq(t, r, http.MethodDelete, "/api/admin/sessions/"+strconv.Itoa(lastID), nil, token)
+	if dw.Code != http.StatusOK {
+		t.Fatalf("delete failed: %d: %s", dw.Code, dw.Body.String())
+	}
+
+	statsAfterDelete := getStats()
+	totalAfterDelete := int(statsAfterDelete["total_points"].(float64))
+	// Should be back to 90 (2 sessions × 10 pts × 1 task)
+	if totalAfterDelete != 20 {
+		t.Errorf("expected 20 points after deleting third session (bonus undone), got %d", totalAfterDelete)
 	}
 }

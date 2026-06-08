@@ -243,6 +243,133 @@ func GetHistory(c *gin.Context) {
 	c.JSON(http.StatusOK, sessions)
 }
 
+// DeleteSession removes a session and, if it was the first approved session of
+// that day, reverses the XP, level, and streak it contributed.
+// DELETE /api/admin/sessions/:id
+func DeleteSession(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ongeldig id"})
+		return
+	}
+
+	tx, err := db.DB.Begin()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+		return
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	var s models.Session
+	var isFirstOfDay int
+	if err := tx.QueryRow(
+		`SELECT id, child_id, date, tasks_completed, status, is_first_of_day FROM sessions WHERE id = ?`, id,
+	).Scan(&s.ID, &s.ChildID, &s.Date, &s.TasksCompleted, &s.Status, &isFirstOfDay); err != nil {
+		if err == sql.ErrNoRows {
+			c.JSON(http.StatusNotFound, gin.H{"error": "sessie niet gevonden"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+		}
+		return
+	}
+
+	if s.Status == "APPROVED" && isFirstOfDay == 1 {
+		sessionDate, parseErr := time.Parse("2006-01-02", s.Date)
+		if parseErr != nil {
+			sessionDate = time.Now()
+		}
+		year, week := sessionDate.ISOWeek()
+		yearWeek := isoWeekKey(year, week)
+
+		var sessionCount, milestoneReached int
+		tx.QueryRow( //nolint:errcheck
+			`SELECT session_count, milestone_reached FROM weekly_streaks WHERE child_id = ? AND year_week = ?`,
+			s.ChildID, yearWeek,
+		).Scan(&sessionCount, &milestoneReached)
+
+		newCount := sessionCount - 1
+		bonusPoints := 0
+
+		if newCount <= 0 {
+			if _, err := tx.Exec(
+				`DELETE FROM weekly_streaks WHERE child_id = ? AND year_week = ?`, s.ChildID, yearWeek,
+			); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+				return
+			}
+		} else {
+			// If the count drops below 3 and the milestone was already awarded, undo it.
+			undoMilestone := milestoneReached == 1 && newCount < 3
+			if undoMilestone {
+				bonusPoints = 50
+				if _, err := tx.Exec(
+					`UPDATE weekly_streaks SET session_count = ?, milestone_reached = 0 WHERE child_id = ? AND year_week = ?`,
+					newCount, s.ChildID, yearWeek,
+				); err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+					return
+				}
+			} else {
+				if _, err := tx.Exec(
+					`UPDATE weekly_streaks SET session_count = ? WHERE child_id = ? AND year_week = ?`,
+					newCount, s.ChildID, yearWeek,
+				); err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+					return
+				}
+			}
+		}
+
+		totalToSubtract := s.TasksCompleted*10 + bonusPoints
+
+		var stats models.UserStats
+		if err := tx.QueryRow(
+			`SELECT id, total_points, current_level, experience_points FROM user_stats WHERE child_id = ?`,
+			s.ChildID,
+		).Scan(&stats.ID, &stats.TotalPoints, &stats.CurrentLevel, &stats.ExperiencePoints); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+			return
+		}
+
+		stats.TotalPoints -= totalToSubtract
+		if stats.TotalPoints < 0 {
+			stats.TotalPoints = 0
+		}
+		stats.ExperiencePoints -= totalToSubtract
+		for stats.ExperiencePoints < 0 && stats.CurrentLevel > 1 {
+			stats.CurrentLevel--
+			stats.ExperiencePoints += stats.CurrentLevel * 100
+		}
+		if stats.ExperiencePoints < 0 {
+			stats.ExperiencePoints = 0
+		}
+
+		if _, err := tx.Exec(
+			`UPDATE user_stats SET total_points = ?, current_level = ?, experience_points = ? WHERE id = ?`,
+			stats.TotalPoints, stats.CurrentLevel, stats.ExperiencePoints, stats.ID,
+		); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+			return
+		}
+	}
+
+	if _, err := tx.Exec(`DELETE FROM session_tasks WHERE session_id = ?`, id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+		return
+	}
+	if _, err := tx.Exec(`DELETE FROM sessions WHERE id = ?`, id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"deleted": true})
+}
+
 type rejectRequest struct {
 	Note string `json:"note" binding:"max=500"`
 }

@@ -44,6 +44,7 @@ func main() {
 			admin.GET("/history", handlers.GetHistory)
 			admin.POST("/approve/:id", handlers.ApproveSession)
 			admin.POST("/reject/:id", handlers.RejectSession)
+			admin.DELETE("/sessions/:id", handlers.DeleteSession)
 
 			admin.GET("/children", handlers.ListChildren)
 			admin.POST("/children", handlers.CreateChild)

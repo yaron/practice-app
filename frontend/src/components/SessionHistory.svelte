@@ -1,6 +1,7 @@
 <script>
   /** @type {any[]} */
-  let { sessions } = $props();
+  /** @type {{ sessions: any[], ondelete: (id: number) => void }} */
+  let { sessions, ondelete } = $props();
 
   const STATUS_LABEL = {
     APPROVED: "Goedgekeurd",
@@ -13,6 +14,13 @@
     REJECTED: "rejected",
     PENDING:  "pending",
   };
+
+  function confirmDelete(s) {
+    const label = s.status === "APPROVED" ? " (score wordt ongedaan gemaakt)" : "";
+    if (confirm(`Sessie van ${s.child_name} op ${s.date} verwijderen?${label}`)) {
+      ondelete(s.id);
+    }
+  }
 </script>
 
 <div class="history">
@@ -28,6 +36,7 @@
           <span class="status {STATUS_CLASS[s.status] ?? 'pending'}">
             {STATUS_LABEL[s.status] ?? s.status}
           </span>
+          <button class="delete-btn" onclick={() => confirmDelete(s)} aria-label="Verwijder sessie">🗑</button>
         </div>
 
         {#if s.tasks && s.tasks.length > 0}
@@ -84,6 +93,18 @@
     font-weight: 600;
     margin-left: auto;
   }
+
+  .delete-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1rem;
+    padding: 0.1rem 0.25rem;
+    opacity: 0.4;
+    transition: opacity 0.15s;
+    line-height: 1;
+  }
+  .delete-btn:hover { opacity: 1; }
   .status.approved { background: #1c4532; color: #68d391; }
   .status.rejected { background: #742a2a; color: #fc8181; }
   .status.pending  { background: #2d3748; color: #a0aec0; }

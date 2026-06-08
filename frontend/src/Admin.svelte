@@ -180,6 +180,20 @@
     }
   }
 
+  async function handleDelete(id) {
+    actionError = "";
+    const res = await fetch(`${API}/api/admin/sessions/${id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${jwt}` },
+    });
+    if (res.ok) {
+      history = history.filter((s) => s.id !== id);
+    } else {
+      const d = await res.json().catch(() => ({}));
+      actionError = d.error ?? "Verwijderen mislukt";
+    }
+  }
+
   function handleLogout() {
     if (pollInterval) clearInterval(pollInterval);
     sessionStorage.removeItem(STORAGE_KEY);
@@ -240,7 +254,7 @@
       {#if activeTab === "pending"}
         <PendingCards {sessions} onapprove={handleApprove} onreject={handleReject} />
       {:else if activeTab === "history"}
-        <SessionHistory sessions={history} />
+        <SessionHistory sessions={history} ondelete={handleDelete} />
       {:else}
         <UserManagement {jwt} api={API} />
       {/if}
