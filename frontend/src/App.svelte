@@ -16,15 +16,16 @@
   let wheelTasks = $state([]);
   /** @type {string[]} */
   let wheelTasksShort = $state([]);
+  /** @type {string[]} */
   let sessionTasks = $state([]);
   let submitted = $state(false);
+  let isSubmitting = $state(false);
   let loading = $state(true);
   let submitError = $state("");
   /** @type {{ current_level: number, experience_points: number, total_points: number, shield_count: number, week_session_count: number, milestone_reached: boolean, year_week: string }|null} */
   let stats = $state(null);
   /** @type {ReturnType<typeof setInterval>|null} */
   let statsInterval = $state(null);
-
   onMount(async () => {
     if (!CHILD_ID) {
       loading = false;
@@ -61,12 +62,34 @@
     if (statsInterval) clearInterval(statsInterval);
   });
 
+  /** @param {string} task */
   function addTask(task) {
     sessionTasks = [...sessionTasks, task];
   }
 
+  async function registerChildNotifications() {
+    try {
+      const { messaging, VAPID_KEY } = await import("./firebase.js");
+      if (!messaging) return;
+      const { getToken } = await import("firebase/messaging");
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") return;
+      const fcmToken = await getToken(messaging, { vapidKey: VAPID_KEY });
+      await fetch(`${API}/api/fcm/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: fcmToken, role: "CHILD", child_id: CHILD_ID }),
+      });
+    } catch {
+      /* FCM not configured or permission denied — silently skip */
+    }
+  }
+
   async function handleSubmit() {
+    if (isSubmitting) return;
     submitError = "";
+    isSubmitting = true;
+    registerChildNotifications();
     try {
       const res = await fetch(`${API}/api/session`, {
         method: "POST",
@@ -80,6 +103,8 @@
       submitted = true;
     } catch {
       submitError = "Kon de sessie niet versturen. Probeer opnieuw.";
+    } finally {
+      isSubmitting = false;
     }
   }
 
@@ -113,7 +138,7 @@
       {#if submitError}
         <p class="hint error">{submitError}</p>
       {/if}
-      <SessionTracker tasks={sessionTasks} onsubmit={handleSubmit} />
+      <SessionTracker tasks={sessionTasks} onsubmit={handleSubmit} {isSubmitting} />
     {/if}
   </main>
 {/if}

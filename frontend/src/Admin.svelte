@@ -55,6 +55,25 @@
     scheduleAutoRefresh(refreshToken);
     loadSessions();
     startPolling();
+    registerAdminNotifications(token);
+  }
+
+  async function registerAdminNotifications(token) {
+    try {
+      const { messaging, VAPID_KEY } = await import("./firebase.js");
+      if (!messaging) return;
+      const { getToken } = await import("firebase/messaging");
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") return;
+      const fcmToken = await getToken(messaging, { vapidKey: VAPID_KEY });
+      await fetch(`${API}/api/fcm/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ token: fcmToken, role: "ADMIN" }),
+      });
+    } catch {
+      /* FCM not configured or permission denied — silently skip */
+    }
   }
 
   // Silently refresh JWT 1 min before expiry (JWT lifetime = 15 min → refresh at 14 min).
@@ -155,6 +174,16 @@
       actionError = d.error ?? "Afwijzen mislukt";
     }
   }
+
+  function handleLogout() {
+    if (pollInterval) clearInterval(pollInterval);
+    sessionStorage.removeItem(STORAGE_KEY);
+    jwt = null;
+    sessions = [];
+    history = [];
+    historyLoaded = false;
+    activeTab = "pending";
+  }
 </script>
 
 <main>
@@ -164,11 +193,15 @@
     <AdminLogin onsuccess={handleLogin} />
   {:else}
     <div class="dashboard">
-      <h1>🎻 Viool Quest — Ouder</h1>
+      <div class="header">
+        <h1>🎻 Viool Quest — Ouder</h1>
+        <button class="logout-btn" onclick={handleLogout} aria-label="Uitloggen">Uitloggen</button>
+      </div>
 
       <div class="tabs" role="tablist">
         <button
           role="tab"
+          aria-selected={activeTab === "pending"}
           class:active={activeTab === "pending"}
           onclick={() => switchTab("pending")}
         >
@@ -179,6 +212,7 @@
         </button>
         <button
           role="tab"
+          aria-selected={activeTab === "history"}
           class:active={activeTab === "history"}
           onclick={() => switchTab("history")}
         >
@@ -186,6 +220,7 @@
         </button>
         <button
           role="tab"
+          aria-selected={activeTab === "users"}
           class:active={activeTab === "users"}
           onclick={() => switchTab("users")}
         >
@@ -213,7 +248,26 @@
   .hint { text-align: center; color: #a0aec0; padding: 4rem; }
 
   .dashboard { max-width: 640px; margin: 0 auto; }
-  h1 { color: #fee440; font-size: 1.75rem; text-align: center; margin: 0 0 1.25rem; }
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.25rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  h1 { color: #fee440; font-size: 1.75rem; margin: 0; }
+  .logout-btn {
+    background: none;
+    border: 1px solid #4a5568;
+    color: #a0aec0;
+    font-size: 0.8rem;
+    padding: 0.35rem 0.85rem;
+    border-radius: 0.4rem;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .logout-btn:hover { color: #e2e8f0; border-color: #718096; }
 
   .tabs {
     display: flex;

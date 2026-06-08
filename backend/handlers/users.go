@@ -47,8 +47,63 @@ func ListChildren(c *gin.Context) {
 	c.JSON(http.StatusOK, children)
 }
 
+type createChildRequest struct {
+	Name     string `json:"name" binding:"required,max=100"`
+	Timezone string `json:"timezone" binding:"max=100"`
+}
+
+// CreateChild creates a new child with user_stats and default wheel options.
+// POST /api/admin/children
+func CreateChild(c *gin.Context) {
+	var req createChildRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	tz := req.Timezone
+	if tz == "" {
+		tz = "Europe/Amsterdam"
+	}
+
+	tx, err := db.DB.Begin()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+		return
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	res, err := tx.Exec(`INSERT INTO children (name, timezone) VALUES (?, ?)`, req.Name, tz)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+		return
+	}
+	childID, _ := res.LastInsertId()
+
+	if _, err := tx.Exec(`INSERT INTO user_stats (child_id) VALUES (?)`, childID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+		return
+	}
+
+	for _, opt := range db.DefaultWheelOptions {
+		if _, err := tx.Exec(
+			`INSERT INTO wheel_options (child_id, text, short_text, is_bonus) VALUES (?, ?, ?, ?)`,
+			childID, opt.Text, opt.ShortText, opt.IsBonus,
+		); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+			return
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, childSummary{ID: childID, Name: req.Name, TotalPoints: 0})
+}
+
 type renameChildRequest struct {
-	Name string `json:"name" binding:"required"`
+	Name string `json:"name" binding:"required,max=100"`
 }
 
 // RenameChild updates a child's display name.
@@ -109,8 +164,8 @@ func ListAdmins(c *gin.Context) {
 }
 
 type createAdminRequest struct {
-	Username string `json:"username" binding:"required"`
-	Password string `json:"password" binding:"required"`
+	Username string `json:"username" binding:"required,max=100"`
+	Password string `json:"password" binding:"required,min=8,max=100"`
 }
 
 // CreateAdmin creates a new admin account.
@@ -188,8 +243,8 @@ func DeleteAdmin(c *gin.Context) {
 }
 
 type updateAdminRequest struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
+	Username string `json:"username" binding:"max=100"`
+	Password string `json:"password" binding:"omitempty,min=8,max=100"`
 }
 
 // UpdateAdmin changes an admin's username and/or password.

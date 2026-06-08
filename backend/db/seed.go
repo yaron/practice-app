@@ -6,14 +6,17 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// wheelOptions are the default tasks seeded for a new child.
-// text is the full task name returned by the API and submitted with sessions.
-// isBonus marks segments that trigger the confetti animation (Phase 7).
-var wheelOptions = []struct {
-	text      string
-	shortText string
-	isBonus   int
-}{
+// DefaultWheelOption is a single default wheel segment definition.
+type DefaultWheelOption struct {
+	Text      string
+	ShortText string
+	IsBonus   int
+}
+
+// DefaultWheelOptions are the default tasks assigned to every new child.
+// Text is the full task name; ShortText is the abbreviated canvas label.
+// IsBonus marks segments that trigger the confetti animation (Phase 7).
+var DefaultWheelOptions = []DefaultWheelOption{
 	{"Speel een liedje op 1 been", "1 Been 1️⃣", 0},
 	{"Speel een liedje boos", "Boos 😠", 0},
 	{"Speel een liedje blij", "Blij 😁", 0},
@@ -58,10 +61,10 @@ func Seed() {
 	}
 
 	// Wheel options — scoped to the seeded child
-	for _, opt := range wheelOptions {
+	for _, opt := range DefaultWheelOptions {
 		if _, err := tx.Exec(
 			`INSERT INTO wheel_options (child_id, text, short_text, is_bonus) VALUES (?, ?, ?, ?)`,
-			childID, opt.text, opt.shortText, opt.isBonus,
+			childID, opt.Text, opt.ShortText, opt.IsBonus,
 		); err != nil {
 			log.Fatalf("seed: insert wheel_option: %v", err)
 		}
@@ -83,5 +86,5 @@ func Seed() {
 		log.Fatalf("seed: commit: %v", err)
 	}
 
-	log.Printf("db: seeded child_id=%d with %d wheel options", childID, len(wheelOptions))
+	log.Printf("db: seeded child_id=%d with %d wheel options", childID, len(DefaultWheelOptions))
 }

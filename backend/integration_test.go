@@ -38,6 +38,10 @@ func setupTestRouter(t *testing.T) *gin.Engine {
 	}
 	t.Cleanup(func() { db.DB.Close() })
 
+	// In-memory SQLite: each connection is a separate empty database.
+	// Pin to one connection so all operations share the same in-memory DB.
+	db.DB.SetMaxOpenConns(1)
+
 	if _, err := db.DB.Exec("PRAGMA foreign_keys=ON;"); err != nil {
 		t.Fatalf("pragma: %v", err)
 	}
@@ -65,6 +69,8 @@ func setupTestRouter(t *testing.T) *gin.Engine {
 	admin.POST("/admins", handlers.CreateAdmin)
 	admin.DELETE("/admins/:id", handlers.DeleteAdmin)
 	admin.PATCH("/admins/:id", handlers.UpdateAdmin)
+
+	api.POST("/fcm/register", handlers.RegisterFCMToken)
 
 	return r
 }
@@ -751,8 +757,130 @@ func TestGetHistory_ShowsAllStatuses(t *testing.T) {
 	}
 }
 
+// TestStreakWeekBoundary confirms that a streak seeded in a past ISO week does not
+// bleed into the current week's stats response.
+func TestStreakWeekBoundary_PastWeekNotCounted(t *testing.T) {
+	r := setupTestRouter(t)
+
+	db.DB.Exec( //nolint:errcheck
+		`INSERT INTO weekly_streaks (child_id, year_week, session_count, milestone_reached)
+		 VALUES (1, '2020-W01', 3, 1)`,
+	)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/stats?child_id=1", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var stats map[string]any
+	json.Unmarshal(w.Body.Bytes(), &stats) //nolint:errcheck
+
+	if stats["week_session_count"].(float64) != 0 {
+		t.Errorf("past week streak must not count for current week, got week_session_count=%v", stats["week_session_count"])
+	}
+	if stats["milestone_reached"].(bool) != false {
+		t.Errorf("past week milestone must not affect current week, got milestone_reached=%v", stats["milestone_reached"])
+	}
+}
+
 func itoa(n int) string {
 	return strconv.Itoa(n)
+}
+
+// --- POST /api/fcm/register ---
+
+func TestRegisterFCMToken_ChildRole(t *testing.T) {
+	r := setupTestRouter(t)
+
+	w := postJSON(t, r, "/api/fcm/register", map[string]any{
+		"token":    "child-device-token-abc",
+		"role":     "CHILD",
+		"child_id": 1,
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var count int
+	db.DB.QueryRow(`SELECT COUNT(*) FROM fcm_tokens WHERE token = 'child-device-token-abc' AND role = 'CHILD' AND child_id = 1`).Scan(&count) //nolint:errcheck
+	if count != 1 {
+		t.Error("expected token to be stored in fcm_tokens")
+	}
+}
+
+func TestRegisterFCMToken_AdminRole(t *testing.T) {
+	r := setupTestRouter(t)
+	token := loginAsAdmin(t, r)
+
+	w := authReq(t, r, http.MethodPost, "/api/fcm/register", map[string]any{
+		"token": "admin-device-token-xyz",
+		"role":  "ADMIN",
+	}, token)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var count int
+	db.DB.QueryRow(`SELECT COUNT(*) FROM fcm_tokens WHERE token = 'admin-device-token-xyz' AND role = 'ADMIN'`).Scan(&count) //nolint:errcheck
+	if count != 1 {
+		t.Error("expected admin token to be stored in fcm_tokens")
+	}
+}
+
+func TestRegisterFCMToken_UpsertUpdatesTimestamp(t *testing.T) {
+	r := setupTestRouter(t)
+
+	// Register once
+	postJSON(t, r, "/api/fcm/register", map[string]any{
+		"token":    "upsert-token",
+		"role":     "CHILD",
+		"child_id": 1,
+	})
+
+	var ts1 string
+	db.DB.QueryRow(`SELECT updated_at FROM fcm_tokens WHERE token = 'upsert-token'`).Scan(&ts1) //nolint:errcheck
+
+	// Register again — should upsert, not error
+	w := postJSON(t, r, "/api/fcm/register", map[string]any{
+		"token":    "upsert-token",
+		"role":     "CHILD",
+		"child_id": 1,
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("upsert expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var rowCount int
+	db.DB.QueryRow(`SELECT COUNT(*) FROM fcm_tokens WHERE token = 'upsert-token'`).Scan(&rowCount) //nolint:errcheck
+	if rowCount != 1 {
+		t.Errorf("expected exactly 1 row after upsert, got %d", rowCount)
+	}
+}
+
+func TestRegisterFCMToken_ChildRoleRequiresChildID(t *testing.T) {
+	r := setupTestRouter(t)
+
+	w := postJSON(t, r, "/api/fcm/register", map[string]any{
+		"token": "child-no-id-token",
+		"role":  "CHILD",
+	})
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 when child_id missing for CHILD role, got %d", w.Code)
+	}
+}
+
+func TestRegisterFCMToken_InvalidRole(t *testing.T) {
+	r := setupTestRouter(t)
+
+	w := postJSON(t, r, "/api/fcm/register", map[string]any{
+		"token": "some-token",
+		"role":  "SUPERUSER",
+	})
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for invalid role, got %d", w.Code)
+	}
 }
 
 // --- GET /api/admin/children ---
@@ -870,12 +998,12 @@ func TestCreateAdmin_DuplicateUsername(t *testing.T) {
 
 	authReq(t, r, http.MethodPost, "/api/admin/admins", map[string]any{
 		"username": "admin",
-		"password": "other",
+		"password": "changeme2",
 	}, token)
 
 	w := authReq(t, r, http.MethodPost, "/api/admin/admins", map[string]any{
 		"username": "admin",
-		"password": "other",
+		"password": "changeme2",
 	}, token)
 	if w.Code != http.StatusConflict {
 		t.Errorf("expected 409, got %d", w.Code)
@@ -891,7 +1019,7 @@ func TestDeleteAdmin_HappyPath(t *testing.T) {
 	// Create a second admin to delete
 	cw := authReq(t, r, http.MethodPost, "/api/admin/admins", map[string]any{
 		"username": "tobedeleted",
-		"password": "pass",
+		"password": "changeme2",
 	}, token)
 	var created map[string]any
 	json.Unmarshal(cw.Body.Bytes(), &created) //nolint:errcheck
@@ -938,7 +1066,7 @@ func TestUpdateAdmin_ChangeUsername(t *testing.T) {
 	// Create a second admin to update
 	cw := authReq(t, r, http.MethodPost, "/api/admin/admins", map[string]any{
 		"username": "original",
-		"password": "pass",
+		"password": "changeme2",
 	}, token)
 	var created map[string]any
 	json.Unmarshal(cw.Body.Bytes(), &created) //nolint:errcheck

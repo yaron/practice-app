@@ -34,3 +34,37 @@ func Open() {
 
 	log.Printf("db: opened %s", path)
 }
+
+func GetAdminTokens() []string {
+	rows, err := DB.Query(`SELECT token FROM fcm_tokens WHERE role = 'ADMIN'`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var tokens []string
+	for rows.Next() {
+		var t string
+		rows.Scan(&t) //nolint:errcheck
+		tokens = append(tokens, t)
+	}
+	return tokens
+}
+
+func GetChildTokens(childID int64) []string {
+	rows, err := DB.Query(`SELECT token FROM fcm_tokens WHERE role = 'CHILD' AND child_id = ?`, childID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var tokens []string
+	for rows.Next() {
+		var t string
+		rows.Scan(&t) //nolint:errcheck
+		tokens = append(tokens, t)
+	}
+	return tokens
+}
+
+func DeleteFCMToken(token string) {
+	DB.Exec(`DELETE FROM fcm_tokens WHERE token = ?`, token) //nolint:errcheck
+}

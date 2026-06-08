@@ -1,5 +1,5 @@
 <script>
-  let { tasks, onsubmit } = $props();
+  let { tasks, onsubmit, isSubmitting = false } = $props();
 </script>
 
 {#if tasks.length > 0}
@@ -10,7 +10,9 @@
         <li>✅ {task}</li>
       {/each}
     </ul>
-    <button onclick={onsubmit}>Verstuur sessie 🚀</button>
+    <button onclick={onsubmit} disabled={isSubmitting}>
+      {isSubmitting ? "Bezig…" : "Verstuur sessie 🚀"}
+    </button>
   </div>
 {/if}
 

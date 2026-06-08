@@ -1,10 +1,12 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
 	"violin-quest-api/db"
+	"violin-quest-api/fcm"
 
 	"github.com/gin-gonic/gin"
 )
@@ -47,10 +49,10 @@ func SubmitSession(c *gin.Context) {
 		return
 	}
 
-	var exists int
+	var childName string
 	if err := db.DB.QueryRow(
-		`SELECT COUNT(*) FROM children WHERE id = ?`, req.ChildID,
-	).Scan(&exists); err != nil || exists == 0 {
+		`SELECT name FROM children WHERE id = ?`, req.ChildID,
+	).Scan(&childName); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unknown child_id"})
 		return
 	}
@@ -75,6 +77,10 @@ func SubmitSession(c *gin.Context) {
 	sessionID, _ := res.LastInsertId()
 
 	for _, task := range req.Tasks {
+		if len(task) > 200 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "taaknaam te lang (max 200 tekens)"})
+			return
+		}
 		if _, err := tx.Exec(
 			`INSERT INTO session_tasks (session_id, task_text) VALUES (?, ?)`,
 			sessionID, task,
@@ -88,6 +94,17 @@ func SubmitSession(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
 		return
 	}
+
+	name := childName
+	taskCount := count
+	if len(req.Tasks) > 0 {
+		taskCount = len(req.Tasks)
+	}
+	go func() {
+		tokens := db.GetAdminTokens()
+		fcm.Send(tokens, "🎻 "+name+" heeft geoefend!", fmt.Sprintf("%d taken afgerond", taskCount))
+	}()
+	// Note: fcm.Send is a no-op when FCM_PROJECT_ID is unset.
 
 	c.JSON(http.StatusCreated, gin.H{"id": sessionID})
 }

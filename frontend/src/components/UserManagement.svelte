@@ -14,6 +14,10 @@
   /** @type {Record<number, string>} */
   let childError = $state({});
 
+  let newChildName = $state("");
+  let createChildError = $state("");
+  let createChildBusy = $state(false);
+
   let newAdminUsername = $state("");
   let newAdminPassword = $state("");
   let createError = $state("");
@@ -78,6 +82,31 @@
     childBusy[id] = false;
   }
 
+  async function createChild() {
+    const name = newChildName.trim();
+    if (!name) return;
+    createChildBusy = true;
+    createChildError = "";
+    try {
+      const res = await fetch(`${api}/api/admin/children`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (res.ok) {
+        const newChild = await res.json();
+        children = [...children, newChild];
+        newChildName = "";
+      } else {
+        const d = await res.json().catch(() => ({}));
+        createChildError = d.error ?? "Aanmaken mislukt";
+      }
+    } catch {
+      createChildError = "Aanmaken mislukt";
+    }
+    createChildBusy = false;
+  }
+
   async function createAdmin() {
     const username = newAdminUsername.trim();
     const password = newAdminPassword.trim();
@@ -106,6 +135,7 @@
   }
 
   async function deleteAdmin(id) {
+    if (!confirm("Ben je zeker dat je deze beheerder wilt verwijderen?")) return;
     adminBusy[id] = true;
     adminError[id] = "";
     try {
@@ -203,6 +233,28 @@
         </div>
       {/each}
     {/if}
+
+    <div class="create-form">
+      <h3>Nieuw kind</h3>
+      <div class="create-fields">
+        <input
+          type="text"
+          placeholder="Naam"
+          bind:value={newChildName}
+          onkeydown={(e) => e.key === "Enter" && createChild()}
+        />
+        <button
+          class="btn save"
+          onclick={createChild}
+          disabled={createChildBusy || !newChildName.trim()}
+        >
+          Aanmaken
+        </button>
+      </div>
+      {#if createChildError}
+        <p class="row-error">{createChildError}</p>
+      {/if}
+    </div>
   </section>
 
   <section>

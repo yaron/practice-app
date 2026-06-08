@@ -408,7 +408,7 @@ Backend:
 - `POST /api/fcm/register` — upsert token in `fcm_tokens` (update `updated_at` if token exists)
 - FCM send helper function (HTTP v1 API via `googleapis` service account or legacy server key)
 - On session submit: goroutine fires notification to all ADMIN tokens: `"🎻 [Child name] just finished practicing! (X tasks)"`
-- On session approve: goroutine fires to CHILD tokens for that child: `"⭐ Dad approved your session! +X XP"`
+- On session approve: goroutine fires to CHILD tokens for that child: `"⭐ [Admin name] approved your session! +X XP"`
 - Cronjob: one scheduled job per child at 16:00 local time, fires to CHILD tokens if no session today
 Frontend:
 - Request notification permission on child view mount (after first user gesture)

@@ -4,18 +4,25 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"violin-quest-api/db"
 	"violin-quest-api/handlers"
 	"violin-quest-api/middleware"
+	"violin-quest-api/reminder"
 
 	"github.com/gin-gonic/gin"
 )
 
 func main() {
+	if os.Getenv("JWT_SECRET") == "" {
+		log.Printf("WARNING: JWT_SECRET is not set — using insecure development secret. Set JWT_SECRET in production.")
+	}
+
 	db.Open()
 	db.Migrate()
 	db.Seed()
+	reminder.StartReminders()
 
 	r := gin.Default()
 	r.Use(corsMiddleware())
@@ -28,6 +35,7 @@ func main() {
 
 		api.POST("/auth/login", handlers.Login)
 		api.POST("/auth/refresh", handlers.RefreshToken)
+		api.POST("/fcm/register", handlers.RegisterFCMToken)
 
 		admin := api.Group("/admin")
 		admin.Use(middleware.JWTAuth())
@@ -38,6 +46,7 @@ func main() {
 			admin.POST("/reject/:id", handlers.RejectSession)
 
 			admin.GET("/children", handlers.ListChildren)
+			admin.POST("/children", handlers.CreateChild)
 			admin.PATCH("/children/:id", handlers.RenameChild)
 
 			admin.GET("/admins", handlers.ListAdmins)
@@ -59,8 +68,27 @@ func main() {
 }
 
 func corsMiddleware() gin.HandlerFunc {
+	// ALLOWED_ORIGINS: comma-separated list of allowed origins.
+	// Defaults to "*" when unset (development). Set explicitly in production.
+	allowedOrigins := os.Getenv("ALLOWED_ORIGINS")
+	originSet := map[string]bool{}
+	useWildcard := allowedOrigins == ""
+	if !useWildcard {
+		for _, o := range strings.Split(allowedOrigins, ",") {
+			if o = strings.TrimSpace(o); o != "" {
+				originSet[o] = true
+			}
+		}
+	}
+
 	return func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", "*")
+		origin := c.GetHeader("Origin")
+		if useWildcard {
+			c.Header("Access-Control-Allow-Origin", "*")
+		} else if originSet[origin] {
+			c.Header("Access-Control-Allow-Origin", origin)
+			c.Header("Vary", "Origin")
+		}
 		c.Header("Access-Control-Allow-Methods", "GET, POST, DELETE, PATCH, OPTIONS")
 		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		if c.Request.Method == http.MethodOptions {

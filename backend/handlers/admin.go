@@ -2,12 +2,14 @@ package handlers
 
 import (
 	"database/sql"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"violin-quest-api/db"
+	"violin-quest-api/fcm"
 	"violin-quest-api/models"
 
 	"github.com/gin-gonic/gin"
@@ -181,6 +183,13 @@ func ApproveSession(c *gin.Context) {
 		return
 	}
 
+	approvedChildID := s.ChildID
+	earnedPoints := totalNew
+	go func() {
+		tokens := db.GetChildTokens(approvedChildID)
+		fcm.Send(tokens, "⭐ Je sessie is goedgekeurd!", fmt.Sprintf("+%d punten", earnedPoints))
+	}()
+
 	c.JSON(http.StatusOK, gin.H{
 		"approved":     true,
 		"base_points":  basePoints,
@@ -235,7 +244,7 @@ func GetHistory(c *gin.Context) {
 }
 
 type rejectRequest struct {
-	Note string `json:"note"`
+	Note string `json:"note" binding:"max=500"`
 }
 
 // RejectSession marks a PENDING session as REJECTED with an optional parent note.
@@ -249,6 +258,15 @@ func RejectSession(c *gin.Context) {
 
 	var req rejectRequest
 	c.ShouldBindJSON(&req) //nolint:errcheck — note is optional
+
+	// Fetch child_id before updating so we can send the notification.
+	var childID int64
+	if err := db.DB.QueryRow(
+		`SELECT child_id FROM sessions WHERE id = ? AND status = 'PENDING'`, id,
+	).Scan(&childID); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "sessie niet gevonden of niet in behandeling"})
+		return
+	}
 
 	res, err := db.DB.Exec(
 		`UPDATE sessions SET status = 'REJECTED', rejection_note = ?
@@ -264,6 +282,16 @@ func RejectSession(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "sessie niet gevonden of niet in behandeling"})
 		return
 	}
+
+	note := req.Note
+	go func() {
+		tokens := db.GetChildTokens(childID)
+		body := "Je sessie is helaas niet goedgekeurd."
+		if note != "" {
+			body = note
+		}
+		fcm.Send(tokens, "❌ Sessie afgewezen", body)
+	}()
 
 	c.JSON(http.StatusOK, gin.H{"rejected": true})
 }
