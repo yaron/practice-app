@@ -59,6 +59,12 @@ func setupTestRouter(t *testing.T) *gin.Engine {
 	admin.GET("/history", handlers.GetHistory)
 	admin.POST("/approve/:id", handlers.ApproveSession)
 	admin.POST("/reject/:id", handlers.RejectSession)
+	admin.GET("/children", handlers.ListChildren)
+	admin.PATCH("/children/:id", handlers.RenameChild)
+	admin.GET("/admins", handlers.ListAdmins)
+	admin.POST("/admins", handlers.CreateAdmin)
+	admin.DELETE("/admins/:id", handlers.DeleteAdmin)
+	admin.PATCH("/admins/:id", handlers.UpdateAdmin)
 
 	return r
 }
@@ -747,4 +753,248 @@ func TestGetHistory_ShowsAllStatuses(t *testing.T) {
 
 func itoa(n int) string {
 	return strconv.Itoa(n)
+}
+
+// --- GET /api/admin/children ---
+
+func TestListChildren_RequiresAuth(t *testing.T) {
+	r := setupTestRouter(t)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/admin/children", nil))
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d", w.Code)
+	}
+}
+
+func TestListChildren_ReturnsSeededChild(t *testing.T) {
+	r := setupTestRouter(t)
+	token := loginAsAdmin(t, r)
+
+	w := authReq(t, r, http.MethodGet, "/api/admin/children", nil, token)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var children []map[string]any
+	json.Unmarshal(w.Body.Bytes(), &children) //nolint:errcheck
+	if len(children) != 1 {
+		t.Fatalf("expected 1 child, got %d", len(children))
+	}
+	if children[0]["name"] != "Speler" {
+		t.Errorf("expected name=Speler, got %v", children[0]["name"])
+	}
+	if _, ok := children[0]["total_points"]; !ok {
+		t.Error("expected total_points field")
+	}
+}
+
+// --- PATCH /api/admin/children/:id ---
+
+func TestRenameChild_HappyPath(t *testing.T) {
+	r := setupTestRouter(t)
+	token := loginAsAdmin(t, r)
+
+	w := authReq(t, r, http.MethodPatch, "/api/admin/children/1", map[string]any{"name": "Lena"}, token)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var name string
+	db.DB.QueryRow(`SELECT name FROM children WHERE id = 1`).Scan(&name) //nolint:errcheck
+	if name != "Lena" {
+		t.Errorf("expected name=Lena in DB, got %q", name)
+	}
+}
+
+func TestRenameChild_NotFound(t *testing.T) {
+	r := setupTestRouter(t)
+	token := loginAsAdmin(t, r)
+
+	w := authReq(t, r, http.MethodPatch, "/api/admin/children/999", map[string]any{"name": "X"}, token)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
+
+// --- GET /api/admin/admins ---
+
+func TestListAdmins_ReturnsSeededAdmin(t *testing.T) {
+	r := setupTestRouter(t)
+	token := loginAsAdmin(t, r)
+
+	w := authReq(t, r, http.MethodGet, "/api/admin/admins", nil, token)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var admins []map[string]any
+	json.Unmarshal(w.Body.Bytes(), &admins) //nolint:errcheck
+	if len(admins) != 1 {
+		t.Fatalf("expected 1 admin, got %d", len(admins))
+	}
+	if admins[0]["username"] != "admin" {
+		t.Errorf("expected username=admin, got %v", admins[0]["username"])
+	}
+	if _, ok := admins[0]["password_hash"]; ok {
+		t.Error("password_hash must not be exposed")
+	}
+}
+
+// --- POST /api/admin/admins ---
+
+func TestCreateAdmin_HappyPath(t *testing.T) {
+	r := setupTestRouter(t)
+	token := loginAsAdmin(t, r)
+
+	w := authReq(t, r, http.MethodPost, "/api/admin/admins", map[string]any{
+		"username": "jan",
+		"password": "geheim123",
+	}, token)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]any
+	json.Unmarshal(w.Body.Bytes(), &resp) //nolint:errcheck
+	if resp["username"] != "jan" {
+		t.Errorf("expected username=jan, got %v", resp["username"])
+	}
+	if _, ok := resp["id"]; !ok {
+		t.Error("expected id in response")
+	}
+}
+
+func TestCreateAdmin_DuplicateUsername(t *testing.T) {
+	r := setupTestRouter(t)
+	token := loginAsAdmin(t, r)
+
+	authReq(t, r, http.MethodPost, "/api/admin/admins", map[string]any{
+		"username": "admin",
+		"password": "other",
+	}, token)
+
+	w := authReq(t, r, http.MethodPost, "/api/admin/admins", map[string]any{
+		"username": "admin",
+		"password": "other",
+	}, token)
+	if w.Code != http.StatusConflict {
+		t.Errorf("expected 409, got %d", w.Code)
+	}
+}
+
+// --- DELETE /api/admin/admins/:id ---
+
+func TestDeleteAdmin_HappyPath(t *testing.T) {
+	r := setupTestRouter(t)
+	token := loginAsAdmin(t, r)
+
+	// Create a second admin to delete
+	cw := authReq(t, r, http.MethodPost, "/api/admin/admins", map[string]any{
+		"username": "tobedeleted",
+		"password": "pass",
+	}, token)
+	var created map[string]any
+	json.Unmarshal(cw.Body.Bytes(), &created) //nolint:errcheck
+	newID := itoa(int(created["id"].(float64)))
+
+	w := authReq(t, r, http.MethodDelete, "/api/admin/admins/"+newID, nil, token)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var count int
+	db.DB.QueryRow(`SELECT COUNT(*) FROM admins WHERE id = ?`, newID).Scan(&count) //nolint:errcheck
+	if count != 0 {
+		t.Error("expected admin to be deleted from DB")
+	}
+}
+
+func TestDeleteAdmin_CannotDeleteSelf(t *testing.T) {
+	r := setupTestRouter(t)
+	token := loginAsAdmin(t, r)
+
+	w := authReq(t, r, http.MethodDelete, "/api/admin/admins/1", nil, token)
+	if w.Code != http.StatusForbidden {
+		t.Errorf("expected 403, got %d", w.Code)
+	}
+}
+
+func TestDeleteAdmin_NotFound(t *testing.T) {
+	r := setupTestRouter(t)
+	token := loginAsAdmin(t, r)
+
+	w := authReq(t, r, http.MethodDelete, "/api/admin/admins/9999", nil, token)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
+
+// --- PATCH /api/admin/admins/:id ---
+
+func TestUpdateAdmin_ChangeUsername(t *testing.T) {
+	r := setupTestRouter(t)
+	token := loginAsAdmin(t, r)
+
+	// Create a second admin to update
+	cw := authReq(t, r, http.MethodPost, "/api/admin/admins", map[string]any{
+		"username": "original",
+		"password": "pass",
+	}, token)
+	var created map[string]any
+	json.Unmarshal(cw.Body.Bytes(), &created) //nolint:errcheck
+	newID := itoa(int(created["id"].(float64)))
+
+	w := authReq(t, r, http.MethodPatch, "/api/admin/admins/"+newID, map[string]any{
+		"username": "renamed",
+	}, token)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var username string
+	db.DB.QueryRow(`SELECT username FROM admins WHERE id = ?`, newID).Scan(&username) //nolint:errcheck
+	if username != "renamed" {
+		t.Errorf("expected username=renamed, got %q", username)
+	}
+}
+
+func TestUpdateAdmin_ChangePassword(t *testing.T) {
+	r := setupTestRouter(t)
+	token := loginAsAdmin(t, r)
+
+	w := authReq(t, r, http.MethodPatch, "/api/admin/admins/1", map[string]any{
+		"password": "nieuwwachtwoord",
+	}, token)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// New password should work for login
+	lw := postJSON(t, r, "/api/auth/login", map[string]any{
+		"username": "admin",
+		"password": "nieuwwachtwoord",
+	})
+	if lw.Code != http.StatusOK {
+		t.Errorf("expected login with new password to succeed, got %d", lw.Code)
+	}
+}
+
+func TestUpdateAdmin_NoFields(t *testing.T) {
+	r := setupTestRouter(t)
+	token := loginAsAdmin(t, r)
+
+	w := authReq(t, r, http.MethodPatch, "/api/admin/admins/1", map[string]any{}, token)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestUpdateAdmin_NotFound(t *testing.T) {
+	r := setupTestRouter(t)
+	token := loginAsAdmin(t, r)
+
+	w := authReq(t, r, http.MethodPatch, "/api/admin/admins/9999", map[string]any{"username": "x"}, token)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", w.Code)
+	}
 }

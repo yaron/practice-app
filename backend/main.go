@@ -36,6 +36,14 @@ func main() {
 			admin.GET("/history", handlers.GetHistory)
 			admin.POST("/approve/:id", handlers.ApproveSession)
 			admin.POST("/reject/:id", handlers.RejectSession)
+
+			admin.GET("/children", handlers.ListChildren)
+			admin.PATCH("/children/:id", handlers.RenameChild)
+
+			admin.GET("/admins", handlers.ListAdmins)
+			admin.POST("/admins", handlers.CreateAdmin)
+			admin.DELETE("/admins/:id", handlers.DeleteAdmin)
+			admin.PATCH("/admins/:id", handlers.UpdateAdmin)
 		}
 	}
 

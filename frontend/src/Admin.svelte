@@ -3,6 +3,7 @@
   import AdminLogin from "./components/AdminLogin.svelte";
   import PendingCards from "./components/PendingCards.svelte";
   import SessionHistory from "./components/SessionHistory.svelte";
+  import UserManagement from "./components/UserManagement.svelte";
 
   const API = import.meta.env.VITE_API_URL ?? "http://localhost:8080";
   const STORAGE_KEY = "vq_refresh_token";
@@ -183,6 +184,13 @@
         >
           Geschiedenis
         </button>
+        <button
+          role="tab"
+          class:active={activeTab === "users"}
+          onclick={() => switchTab("users")}
+        >
+          Gebruikers
+        </button>
       </div>
 
       {#if actionError}
@@ -191,8 +199,10 @@
 
       {#if activeTab === "pending"}
         <PendingCards {sessions} onapprove={handleApprove} onreject={handleReject} />
-      {:else}
+      {:else if activeTab === "history"}
         <SessionHistory sessions={history} />
+      {:else}
+        <UserManagement {jwt} api={API} />
       {/if}
     </div>
   {/if}
