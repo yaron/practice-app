@@ -17,6 +17,36 @@ type childSummary struct {
 	TotalPoints int    `json:"total_points"`
 }
 
+type childPublic struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
+// ListChildrenPublic returns id+name for all children (no auth required).
+// GET /api/children
+func ListChildrenPublic(c *gin.Context) {
+	rows, err := db.DB.Query(`SELECT id, name FROM children ORDER BY id`)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+		return
+	}
+	defer rows.Close()
+
+	var children []childPublic
+	for rows.Next() {
+		var ch childPublic
+		if err := rows.Scan(&ch.ID, &ch.Name); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "scan error"})
+			return
+		}
+		children = append(children, ch)
+	}
+	if children == nil {
+		children = []childPublic{}
+	}
+	c.JSON(http.StatusOK, children)
+}
+
 // ListChildren returns all children with their total score.
 // GET /api/admin/children
 func ListChildren(c *gin.Context) {

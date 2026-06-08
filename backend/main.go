@@ -29,6 +29,7 @@ func main() {
 
 	api := r.Group("/api")
 	{
+		api.GET("/children", handlers.ListChildrenPublic)
 		api.GET("/options", handlers.GetOptions)
 		api.GET("/stats", handlers.GetStats)
 		api.POST("/session", handlers.SubmitSession)

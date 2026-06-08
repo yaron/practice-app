@@ -1,5 +1,7 @@
 <script>
-  let { tasks, shorttasks, onresult } = $props();
+  import confetti from "canvas-confetti";
+
+  let { tasks, shorttasks, bonusflags = [], onresult } = $props();
 
   let canvas;
   let spinning = $state(false);
@@ -112,6 +114,14 @@
     const segDeg = 360 / n;
     const norm = ((currentRotation % 360) + 360) % 360;
     const index = Math.floor(((360 - norm) % 360) / segDeg) % n;
+    if (bonusflags[index]) {
+      confetti({
+        particleCount: 200,
+        spread: 120,
+        origin: { y: 0.4 },
+        colors: ["#FFD700", "#FF69B4", "#00CED1"],
+      });
+    }
     onresult(tasks[index]);
   }
 </script>

@@ -305,7 +305,11 @@
     margin-bottom: 1.25rem;
     border-bottom: 1px solid #2d3748;
     padding-bottom: 0;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    scrollbar-width: none;
   }
+  .tabs::-webkit-scrollbar { display: none; }
   .tabs button {
     background: none;
     border: none;
@@ -316,6 +320,7 @@
     cursor: pointer;
     border-bottom: 2px solid transparent;
     margin-bottom: -1px;
+    flex-shrink: 0;
     display: flex;
     align-items: center;
     gap: 0.4rem;

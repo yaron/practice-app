@@ -11,11 +11,18 @@
   const isAdmin = path === "/admin";
   const childMatch = !isAdmin && path.match(/^\/child\/(\d+)/);
   const CHILD_ID = childMatch ? parseInt(childMatch[1], 10) : null;
+  const isRoot = !isAdmin && !childMatch;
+
+  /** @type {{ id: number, name: string }[]} */
+  let children = $state([]);
+  let childrenLoading = $state(isRoot);
 
   /** @type {string[]} */
   let wheelTasks = $state([]);
   /** @type {string[]} */
   let wheelTasksShort = $state([]);
+  /** @type {boolean[]} */
+  let wheelBonus = $state([]);
   /** @type {string[]} */
   let sessionTasks = $state([]);
   let submitted = $state(false);
@@ -27,6 +34,15 @@
   /** @type {ReturnType<typeof setInterval>|null} */
   let statsInterval = $state(null);
   onMount(async () => {
+    if (isRoot) {
+      try {
+        const res = await fetch(`${API}/api/children`);
+        if (res.ok) children = await res.json();
+      } finally {
+        childrenLoading = false;
+      }
+      return;
+    }
     if (!CHILD_ID) {
       loading = false;
       return;
@@ -40,6 +56,7 @@
       const options = await optRes.json();
       wheelTasks = options.map((/** @type {{ text: string }} */ o) => o.text);
       wheelTasksShort = options.map((/** @type {{ short_text: string }} */ o) => o.short_text);
+      wheelBonus = options.map((/** @type {{ is_bonus: boolean }} */ o) => !!o.is_bonus);
       if (statsRes.ok) stats = await statsRes.json();
     } catch {
       wheelTasks = [];
@@ -121,6 +138,24 @@
 
 {#if isAdmin}
   <Admin />
+{:else if isRoot}
+  <main>
+    <h1>🎻 Viool Quest</h1>
+    {#if childrenLoading}
+      <p class="hint">Laden…</p>
+    {:else if children.length === 0}
+      <p class="hint error">Geen kinderen gevonden.</p>
+    {:else}
+      <p class="hint">Kies een speler:</p>
+      <ul class="child-list">
+        {#each children as child}
+          <li>
+            <a href="/child/{child.id}" class="child-btn">{child.name}</a>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  </main>
 {:else}
   <main>
     <h1>🎻 Viool Quest</h1>
@@ -138,7 +173,7 @@
       {#if stats}
         <Hud {stats} />
       {/if}
-      <Wheel tasks={wheelTasks} shorttasks={wheelTasksShort} onresult={addTask} />
+      <Wheel tasks={wheelTasks} shorttasks={wheelTasksShort} bonusflags={wheelBonus} onresult={addTask} />
       {#if submitError}
         <p class="hint error">{submitError}</p>
       {/if}
@@ -182,5 +217,32 @@
     font-size: 1rem;
     font-weight: bold;
     cursor: pointer;
+  }
+
+  .child-list {
+    list-style: none;
+    padding: 0;
+    margin: 1.5rem auto 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    max-width: 280px;
+  }
+
+  .child-btn {
+    display: block;
+    padding: 0.9rem 1.5rem;
+    background: #6c3ce1;
+    color: #fff;
+    border-radius: 2rem;
+    font-size: 1.15rem;
+    font-weight: bold;
+    text-decoration: none;
+    transition: background 0.2s, transform 0.1s;
+  }
+
+  .child-btn:hover {
+    background: #7d50ef;
+    transform: scale(1.03);
   }
 </style>
