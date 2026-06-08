@@ -20,7 +20,7 @@ func GetOptions(c *gin.Context) {
 	}
 
 	rows, err := db.DB.Query(
-		`SELECT id, child_id, text, is_bonus FROM wheel_options WHERE child_id = ? ORDER BY id`,
+		`SELECT id, child_id, text, short_text, is_bonus FROM wheel_options WHERE child_id = ? ORDER BY id`,
 		childID,
 	)
 	if err != nil {
@@ -33,7 +33,7 @@ func GetOptions(c *gin.Context) {
 	for rows.Next() {
 		var o models.WheelOption
 		var isBonus int
-		if err := rows.Scan(&o.ID, &o.ChildID, &o.Text, &isBonus); err != nil {
+		if err := rows.Scan(&o.ID, &o.ChildID, &o.Text, &o.ShortText, &isBonus); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "scan error"})
 			return
 		}

@@ -42,10 +42,11 @@ func Migrate() {
 			PRIMARY KEY (child_id, year_week)
 		)`,
 		`CREATE TABLE IF NOT EXISTS wheel_options (
-			id       INTEGER PRIMARY KEY AUTOINCREMENT,
-			child_id INTEGER NOT NULL REFERENCES children(id),
-			text     TEXT    NOT NULL,
-			is_bonus INTEGER DEFAULT 0
+			id         INTEGER PRIMARY KEY AUTOINCREMENT,
+			child_id   INTEGER NOT NULL REFERENCES children(id),
+			text       TEXT    NOT NULL,
+			short_text TEXT    NOT NULL DEFAULT '',
+			is_bonus   INTEGER DEFAULT 0
 		)`,
 		`CREATE TABLE IF NOT EXISTS fcm_tokens (
 			token      TEXT     PRIMARY KEY,

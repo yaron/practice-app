@@ -130,9 +130,15 @@ func TestGetOptions_ReturnsSeededOptions(t *testing.T) {
 	if options[0]["text"] != "Speel een liedje op 1 been" {
 		t.Errorf("unexpected first option text: %v", options[0]["text"])
 	}
+	if options[0]["short_text"] != "1 Been 1️⃣" {
+		t.Errorf("unexpected first option short_text: %v", options[0]["short_text"])
+	}
 	for _, o := range options {
 		if o["child_id"].(float64) != 1 {
 			t.Errorf("option has wrong child_id: %v", o["child_id"])
+		}
+		if o["short_text"] == "" {
+			t.Errorf("option has empty short_text: %v", o)
 		}
 	}
 }

@@ -5,8 +5,6 @@
   import SuccessPanel from "./components/SuccessPanel.svelte";
   import Hud from "./components/Hud.svelte";
   import Admin from "./Admin.svelte";
-  import { WHEEL_TASKS_SHORT } from "./lib/wheelData.js";
-
   const API = import.meta.env.VITE_API_URL ?? "http://localhost:8080";
 
   const path = window.location.pathname;
@@ -16,6 +14,8 @@
 
   /** @type {string[]} */
   let wheelTasks = $state([]);
+  /** @type {string[]} */
+  let wheelTasksShort = $state([]);
   let sessionTasks = $state([]);
   let submitted = $state(false);
   let loading = $state(true);
@@ -38,6 +38,7 @@
       if (!optRes.ok) throw new Error(`HTTP ${optRes.status}`);
       const options = await optRes.json();
       wheelTasks = options.map((/** @type {{ text: string }} */ o) => o.text);
+      wheelTasksShort = options.map((/** @type {{ short_text: string }} */ o) => o.short_text);
       if (statsRes.ok) stats = await statsRes.json();
     } catch {
       wheelTasks = [];
@@ -108,7 +109,7 @@
       {#if stats}
         <Hud {stats} />
       {/if}
-      <Wheel tasks={wheelTasks} shorttasks={WHEEL_TASKS_SHORT} onresult={addTask} />
+      <Wheel tasks={wheelTasks} shorttasks={wheelTasksShort} onresult={addTask} />
       {#if submitError}
         <p class="hint error">{submitError}</p>
       {/if}

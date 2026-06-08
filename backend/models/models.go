@@ -7,10 +7,11 @@ type Child struct {
 }
 
 type WheelOption struct {
-	ID      int64  `json:"id"`
-	ChildID int64  `json:"child_id"`
-	Text    string `json:"text"`
-	IsBonus bool   `json:"is_bonus"`
+	ID        int64  `json:"id"`
+	ChildID   int64  `json:"child_id"`
+	Text      string `json:"text"`
+	ShortText string `json:"short_text"`
+	IsBonus   bool   `json:"is_bonus"`
 }
 
 type Session struct {

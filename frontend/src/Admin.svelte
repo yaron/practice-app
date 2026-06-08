@@ -192,7 +192,7 @@
       {#if activeTab === "pending"}
         <PendingCards {sessions} onapprove={handleApprove} onreject={handleReject} />
       {:else}
-        <SessionHistory {history} />
+        <SessionHistory sessions={history} />
       {/if}
     </div>
   {/if}

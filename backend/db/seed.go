@@ -10,16 +10,17 @@ import (
 // text is the full task name returned by the API and submitted with sessions.
 // isBonus marks segments that trigger the confetti animation (Phase 7).
 var wheelOptions = []struct {
-	text    string
-	isBonus int
+	text      string
+	shortText string
+	isBonus   int
 }{
-	{"Speel een liedje op 1 been", 0},
-	{"Speel een liedje boos", 0},
-	{"Speel een liedje blij", 0},
-	{"Speel een liedje terwijl je stampt", 0},
-	{"Speel een liedje gewoon", 0},
-	{"Speel een liedje gewoon", 0},
-	{"Speel een liedje terwijl iemand je afleid", 0},
+	{"Speel een liedje op 1 been", "1 Been 1️⃣", 0},
+	{"Speel een liedje boos", "Boos 😠", 0},
+	{"Speel een liedje blij", "Blij 😁", 0},
+	{"Speel een liedje terwijl je stampt", "Stampend 🦵", 0},
+	{"Speel een liedje gewoon", "Gewoon 🤷", 0},
+	{"Speel een liedje gewoon", "Gewoontjes 👍", 0},
+	{"Speel een liedje terwijl iemand je afleid", "Afleiding 😝", 0},
 }
 
 // Seed inserts initial data if the database is empty (no children yet).
@@ -59,8 +60,8 @@ func Seed() {
 	// Wheel options — scoped to the seeded child
 	for _, opt := range wheelOptions {
 		if _, err := tx.Exec(
-			`INSERT INTO wheel_options (child_id, text, is_bonus) VALUES (?, ?, ?)`,
-			childID, opt.text, opt.isBonus,
+			`INSERT INTO wheel_options (child_id, text, short_text, is_bonus) VALUES (?, ?, ?, ?)`,
+			childID, opt.text, opt.shortText, opt.isBonus,
 		); err != nil {
 			log.Fatalf("seed: insert wheel_option: %v", err)
 		}
