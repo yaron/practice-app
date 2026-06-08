@@ -35,6 +35,7 @@
           scheduleAutoRefresh(stored);
           await loadSessions();
           startPolling();
+          registerAdminNotifications(data.token);
         } else {
           sessionStorage.removeItem(STORAGE_KEY);
         }
