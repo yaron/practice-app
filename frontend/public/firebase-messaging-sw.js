@@ -21,6 +21,6 @@ messaging.onBackgroundMessage((payload) => {
   const { title, body } = payload.notification ?? {}
   self.registration.showNotification(title ?? 'Viool Quest', {
     body: body ?? '',
-    icon: '/favicon.svg',
+    icon: '/icons/icon-192.png',
   })
 })

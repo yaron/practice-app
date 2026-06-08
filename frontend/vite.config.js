@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv } from 'vite'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
+import { VitePWA } from 'vite-plugin-pwa'
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -10,6 +11,65 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [
       svelte(),
+
+      VitePWA({
+        registerType: 'autoUpdate',
+        // Inject the workbox SW registration script directly into index.html.
+        // The firebase-messaging-sw.js is registered separately in main.js at
+        // scope /firebase-cloud-messaging-push-scope/ to avoid conflict.
+        injectRegister: 'inline',
+        manifest: {
+          name: 'Violin Quest',
+          short_name: 'ViolinQuest',
+          description: 'Gamified viooloefen-tracker',
+          theme_color: '#6C3CE1',
+          background_color: '#1A1A2E',
+          display: 'standalone',
+          orientation: 'portrait',
+          scope: '/',
+          start_url: '/',
+          icons: [
+            {
+              src: '/icons/icon-192.png',
+              sizes: '192x192',
+              type: 'image/png',
+            },
+            {
+              src: '/icons/icon-512.png',
+              sizes: '512x512',
+              type: 'image/png',
+            },
+            {
+              src: '/icons/icon-512.png',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'maskable',
+            },
+          ],
+        },
+        workbox: {
+          // Precache all built assets; exclude the firebase messaging SW so it's
+          // always fetched fresh (it contains injected Firebase credentials).
+          globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+          globIgnores: ['**/firebase-messaging-sw.js'],
+          runtimeCaching: [
+            {
+              // Wheel options load offline (StaleWhileRevalidate: serve from
+              // cache immediately, update in background for next visit).
+              urlPattern: /^https?.*\/api\/options/,
+              handler: 'StaleWhileRevalidate',
+              options: {
+                cacheName: 'wheel-options',
+                expiration: {
+                  maxEntries: 10,
+                  maxAgeSeconds: 24 * 60 * 60, // 24 hours
+                },
+              },
+            },
+          ],
+        },
+      }),
+
       // Replaces __VITE_FIREBASE_*__ placeholders in firebase-messaging-sw.js.
       // In dev: serves the file via a middleware with values injected on the fly.
       // In build: rewrites the file in dist/ after bundle.
