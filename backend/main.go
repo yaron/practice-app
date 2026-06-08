@@ -69,8 +69,12 @@ func main() {
 
 func corsMiddleware() gin.HandlerFunc {
 	// ALLOWED_ORIGINS: comma-separated list of allowed origins.
-	// Defaults to "*" when unset (development). Set explicitly in production.
+	// In release mode, defaults to the production frontend if not explicitly set.
+	// In any other mode, defaults to "*".
 	allowedOrigins := os.Getenv("ALLOWED_ORIGINS")
+	if allowedOrigins == "" && gin.Mode() == gin.ReleaseMode {
+		allowedOrigins = "https://viool.naomital.nl"
+	}
 	originSet := map[string]bool{}
 	useWildcard := allowedOrigins == ""
 	if !useWildcard {
