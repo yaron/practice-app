@@ -107,6 +107,28 @@
     createChildBusy = false;
   }
 
+  async function deleteChild(id) {
+    const child = children.find((c) => c.id === id);
+    if (!confirm(`Kind "${child?.name}" en alle bijbehorende sessies permanent verwijderen?`)) return;
+    childBusy[id] = true;
+    childError[id] = "";
+    try {
+      const res = await fetch(`${api}/api/admin/children/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${jwt}` },
+      });
+      if (res.ok) {
+        children = children.filter((c) => c.id !== id);
+      } else {
+        const d = await res.json().catch(() => ({}));
+        childError[id] = d.error ?? "Verwijderen mislukt";
+      }
+    } catch {
+      childError[id] = "Verwijderen mislukt";
+    }
+    childBusy[id] = false;
+  }
+
   async function createAdmin() {
     const username = newAdminUsername.trim();
     const password = newAdminPassword.trim();
@@ -228,7 +250,10 @@
           {:else}
             <span class="name">{child.name}</span>
             <span class="score">{child.total_points} pt</span>
-            <button class="btn edit" onclick={() => startEditChild(child)}>Naam wijzigen</button>
+            <div class="admin-actions">
+              <button class="btn edit" onclick={() => startEditChild(child)} disabled={childBusy[child.id]}>Naam wijzigen</button>
+              <button class="btn delete" onclick={() => deleteChild(child.id)} disabled={childBusy[child.id]}>Verwijderen</button>
+            </div>
           {/if}
         </div>
       {/each}

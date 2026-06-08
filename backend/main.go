@@ -49,6 +49,7 @@ func main() {
 			admin.GET("/children", handlers.ListChildren)
 			admin.POST("/children", handlers.CreateChild)
 			admin.PATCH("/children/:id", handlers.RenameChild)
+			admin.DELETE("/children/:id", handlers.DeleteChild)
 
 			admin.GET("/admins", handlers.ListAdmins)
 			admin.POST("/admins", handlers.CreateAdmin)

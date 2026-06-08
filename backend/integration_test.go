@@ -65,7 +65,9 @@ func setupTestRouter(t *testing.T) *gin.Engine {
 	admin.POST("/reject/:id", handlers.RejectSession)
 	admin.DELETE("/sessions/:id", handlers.DeleteSession)
 	admin.GET("/children", handlers.ListChildren)
+	admin.POST("/children", handlers.CreateChild)
 	admin.PATCH("/children/:id", handlers.RenameChild)
+	admin.DELETE("/children/:id", handlers.DeleteChild)
 	admin.GET("/admins", handlers.ListAdmins)
 	admin.POST("/admins", handlers.CreateAdmin)
 	admin.DELETE("/admins/:id", handlers.DeleteAdmin)
@@ -1129,6 +1131,72 @@ func TestUpdateAdmin_NotFound(t *testing.T) {
 }
 
 // --- DELETE /api/admin/sessions/:id ---
+
+// --- DELETE /api/admin/children/:id ---
+
+func TestDeleteChild_NotFound(t *testing.T) {
+	r := setupTestRouter(t)
+	token := loginAsAdmin(t, r)
+
+	w := authReq(t, r, http.MethodDelete, "/api/admin/children/9999", nil, token)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestDeleteChild_RemovesChildAndData(t *testing.T) {
+	r := setupTestRouter(t)
+	token := loginAsAdmin(t, r)
+
+	// Create a new child so we don't delete the seeded one
+	cw := authReq(t, r, http.MethodPost, "/api/admin/children", map[string]any{"name": "Testkind"}, token)
+	if cw.Code != http.StatusCreated {
+		t.Fatalf("create child failed: %d", cw.Code)
+	}
+	var created map[string]any
+	json.Unmarshal(cw.Body.Bytes(), &created) //nolint:errcheck
+	childID := int(created["id"].(float64))
+
+	// Submit and approve a session for the new child
+	sw := postJSON(t, r, "/api/session", map[string]any{"child_id": childID, "tasks": []string{"Toonladder"}})
+	if sw.Code != http.StatusCreated {
+		t.Fatalf("submit failed: %d", sw.Code)
+	}
+	var sess map[string]any
+	json.Unmarshal(sw.Body.Bytes(), &sess) //nolint:errcheck
+	sessionID := int(sess["id"].(float64))
+
+	aw := authReq(t, r, http.MethodPost, "/api/admin/approve/"+strconv.Itoa(sessionID), nil, token)
+	if aw.Code != http.StatusOK {
+		t.Fatalf("approve failed: %d", aw.Code)
+	}
+
+	// Delete the child
+	dw := authReq(t, r, http.MethodDelete, "/api/admin/children/"+strconv.Itoa(childID), nil, token)
+	if dw.Code != http.StatusOK {
+		t.Fatalf("delete failed: %d: %s", dw.Code, dw.Body.String())
+	}
+
+	// Child must be gone from the list
+	lw := authReq(t, r, http.MethodGet, "/api/admin/children", nil, token)
+	var list []map[string]any
+	json.Unmarshal(lw.Body.Bytes(), &list) //nolint:errcheck
+	for _, ch := range list {
+		if int(ch["id"].(float64)) == childID {
+			t.Errorf("deleted child still appears in list")
+		}
+	}
+
+	// Session must be gone from history
+	hw := authReq(t, r, http.MethodGet, "/api/admin/history", nil, token)
+	var history []map[string]any
+	json.Unmarshal(hw.Body.Bytes(), &history) //nolint:errcheck
+	for _, s := range history {
+		if int(s["child_id"].(float64)) == childID {
+			t.Errorf("session of deleted child still appears in history")
+		}
+	}
+}
 
 func TestDeleteSession_NotFound(t *testing.T) {
 	r := setupTestRouter(t)

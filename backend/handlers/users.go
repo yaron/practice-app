@@ -133,6 +133,57 @@ func RenameChild(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+// DeleteChild removes a child and all their associated data (sessions, stats,
+// wheel options, streaks, FCM tokens).
+// DELETE /api/admin/children/:id
+func DeleteChild(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ongeldig id"})
+		return
+	}
+
+	tx, err := db.DB.Begin()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+		return
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	var exists int
+	if err := tx.QueryRow(`SELECT 1 FROM children WHERE id = ?`, id).Scan(&exists); err != nil {
+		if err == sql.ErrNoRows {
+			c.JSON(http.StatusNotFound, gin.H{"error": "kind niet gevonden"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+		}
+		return
+	}
+
+	steps := []string{
+		`DELETE FROM session_tasks WHERE session_id IN (SELECT id FROM sessions WHERE child_id = ?)`,
+		`DELETE FROM sessions        WHERE child_id = ?`,
+		`DELETE FROM weekly_streaks  WHERE child_id = ?`,
+		`DELETE FROM wheel_options   WHERE child_id = ?`,
+		`DELETE FROM fcm_tokens      WHERE child_id = ?`,
+		`DELETE FROM user_stats      WHERE child_id = ?`,
+		`DELETE FROM children        WHERE id = ?`,
+	}
+	for _, q := range steps {
+		if _, err := tx.Exec(q, id); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+			return
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"deleted": true})
+}
+
 type adminSummary struct {
 	ID       int64  `json:"id"`
 	Username string `json:"username"`
