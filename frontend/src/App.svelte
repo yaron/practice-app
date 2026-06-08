@@ -71,7 +71,7 @@
     try {
       const { messaging, VAPID_KEY } = await import("./firebase.js");
       if (!messaging) return;
-      const { getToken } = await import("firebase/messaging");
+      const { getToken, onMessage } = await import("firebase/messaging");
       const permission = await Notification.requestPermission();
       if (permission !== "granted") return;
       const fcmToken = await getToken(messaging, { vapidKey: VAPID_KEY });
@@ -80,8 +80,12 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token: fcmToken, role: "CHILD", child_id: CHILD_ID }),
       });
-    } catch {
-      /* FCM not configured or permission denied — silently skip */
+      // Show notifications while the tab is in the foreground (FCM suppresses them otherwise).
+      onMessage(messaging, ({ notification }) => {
+        new Notification(notification?.title ?? 'Viool Quest', { body: notification?.body ?? '' })
+      })
+    } catch (err) {
+      console.warn('FCM registration failed:', err)
     }
   }
 
